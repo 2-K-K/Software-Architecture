@@ -1,0 +1,28 @@
+@host = http://localhost:5080
+@sessionId = 5fd41333-2967-4cd3-b1bb-efffd2cfba2f
+@orderId = 74af2c43-fbdc-4db2-8ebe-58511e8ea813
+@ticketCode = В5fd4133329674cd3b1bbefffd2cfba2f.1.1.89bbe843c66540908df20dbf9390d87a.F5A7C3B792D2D10E
+
+### Резервування місць
+POST {{host}}/api/sessions/{{sessionId}}/reservations
+Content-Type: application/json
+
+{ "buyerEmail": "student@example.com", "seats": [ { "row": 1, "number": 1 }, { "row": 4, "number": 1 } ] }
+
+### Оплата (відхилена банком)
+POST {{host}}/api/orders/{{orderId}}/payment
+Content-Type: application/json
+
+{ "paymentToken": "declined" }
+
+### Оплата (успішна)
+POST {{host}}/api/orders/{{orderId}}/payment
+Content-Type: application/json
+
+{ "paymentToken": "tok_ok" }
+
+### Перевірка квитка на вході (до відкриття входу поверне відмову: сеанс через 30 днів)
+POST {{host}}/api/tickets/validation
+Content-Type: application/json
+
+{ "code": "{{ticketCode}}" }

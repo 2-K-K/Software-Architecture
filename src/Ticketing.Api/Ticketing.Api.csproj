@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\Ticketing.Application\Ticketing.Application.csproj" />
+    <!-- Посилання на Infrastructure потрібне лише для CompositionRoot.cs -->
+    <ProjectReference Include="..\Ticketing.Infrastructure\Ticketing.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

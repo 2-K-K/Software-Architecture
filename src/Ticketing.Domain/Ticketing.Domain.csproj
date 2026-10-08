@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Домен без залежностей: ні від інших шарів, ні від NuGet-пакетів. -->
+</Project>

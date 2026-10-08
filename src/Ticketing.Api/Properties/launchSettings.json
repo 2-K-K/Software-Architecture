@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Ticketing.Api": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "api/demo",
+      "applicationUrl": "http://localhost:5080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
