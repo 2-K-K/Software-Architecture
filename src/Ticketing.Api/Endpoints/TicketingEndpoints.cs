@@ -5,7 +5,6 @@ namespace Ticketing.Api.Endpoints;
 
 /// <summary>
 /// Шар подання: приймає HTTP-запити, перевіряє формат вводу, перетворює DTO на команди й передає їх сценаріям.
-/// Бізнес-правил тут немає.
 /// </summary>
 public static class TicketingEndpoints
 {
