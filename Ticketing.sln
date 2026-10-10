@@ -21,13 +21,38 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ticketing.Application.Tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ticketing.Architecture.Tests", "tests\Ticketing.Architecture.Tests\Ticketing.Architecture.Tests.csproj", "{4C0B8E10-ECEC-4347-A03E-7818362C0D33}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Catalog.Service", "services\Catalog.Service\Catalog.Service.csproj", "{3C8B6EE1-EF81-1D30-E87E-4E03A048EBC0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sales.Service", "services\Sales.Service\Sales.Service.csproj", "{26911DF7-0D2B-43FB-808B-C9CD2DBA1164}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Notifications.Service", "services\Notifications.Service\Notifications.Service.csproj", "{55A9F139-0FCE-BE0E-8773-151771021131}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Gateway", "services\Gateway\Gateway.csproj", "{F43947B9-0296-D70D-8E35-C807B831520D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		services\experiment.sh = services\experiment.sh
+		services\README.md = services\README.md
+		services\run-all.sh = services\run-all.sh
+		services\stop-all.sh = services\stop-all.sh
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "contracts", "contracts", "{7FAE7197-1643-4B67-B006-E313605AFFBE}"
+	ProjectSection(SolutionItems) = preProject
+		services\contracts\catalog.openapi.yaml = services\contracts\catalog.openapi.yaml
+		services\contracts\notifications.openapi.yaml = services\contracts\notifications.openapi.yaml
+		services\contracts\sales.openapi.yaml = services\contracts\sales.openapi.yaml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "events", "events", "{699EF2FD-5CC4-44A3-84FC-AA35E62D375D}"
+	ProjectSection(SolutionItems) = preProject
+		services\contracts\events\tickets-issued.v1.json = services\contracts\events\tickets-issued.v1.json
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{664285EE-C880-4155-9931-AFF4D647E10E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -58,6 +83,25 @@ Global
 		{4C0B8E10-ECEC-4347-A03E-7818362C0D33}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4C0B8E10-ECEC-4347-A03E-7818362C0D33}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4C0B8E10-ECEC-4347-A03E-7818362C0D33}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3C8B6EE1-EF81-1D30-E87E-4E03A048EBC0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3C8B6EE1-EF81-1D30-E87E-4E03A048EBC0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3C8B6EE1-EF81-1D30-E87E-4E03A048EBC0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3C8B6EE1-EF81-1D30-E87E-4E03A048EBC0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{26911DF7-0D2B-43FB-808B-C9CD2DBA1164}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{26911DF7-0D2B-43FB-808B-C9CD2DBA1164}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{26911DF7-0D2B-43FB-808B-C9CD2DBA1164}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{26911DF7-0D2B-43FB-808B-C9CD2DBA1164}.Release|Any CPU.Build.0 = Release|Any CPU
+		{55A9F139-0FCE-BE0E-8773-151771021131}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{55A9F139-0FCE-BE0E-8773-151771021131}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{55A9F139-0FCE-BE0E-8773-151771021131}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{55A9F139-0FCE-BE0E-8773-151771021131}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F43947B9-0296-D70D-8E35-C807B831520D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F43947B9-0296-D70D-8E35-C807B831520D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F43947B9-0296-D70D-8E35-C807B831520D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F43947B9-0296-D70D-8E35-C807B831520D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{664285EE-C880-4155-9931-AFF4D647E10E} = {E77958C7-AC4F-4FC6-9525-EAB036C55ACD}
@@ -67,5 +111,14 @@ Global
 		{73A7F465-C507-46AC-8ACD-149C63F98E82} = {E1CBA047-78D1-4DDB-A1F1-2A7BD1FC9FE9}
 		{8AE54CAA-DFD0-4CD6-9D52-AB0C58E2CC84} = {E1CBA047-78D1-4DDB-A1F1-2A7BD1FC9FE9}
 		{4C0B8E10-ECEC-4347-A03E-7818362C0D33} = {E1CBA047-78D1-4DDB-A1F1-2A7BD1FC9FE9}
+		{3C8B6EE1-EF81-1D30-E87E-4E03A048EBC0} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{26911DF7-0D2B-43FB-808B-C9CD2DBA1164} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{55A9F139-0FCE-BE0E-8773-151771021131} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{F43947B9-0296-D70D-8E35-C807B831520D} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{7FAE7197-1643-4B67-B006-E313605AFFBE} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{699EF2FD-5CC4-44A3-84FC-AA35E62D375D} = {7FAE7197-1643-4B67-B006-E313605AFFBE}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {7AC729FD-7B77-48D5-A277-180960D5BFF7}
 	EndGlobalSection
 EndGlobal

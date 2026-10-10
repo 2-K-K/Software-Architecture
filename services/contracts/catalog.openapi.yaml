@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Catalog.Service
+  version: 1.0.0
+  description: >
+    Контекст «Каталог». Володіє заходами, сеансами, схемами залів і місцями.
+    Внутрішні ендпоінти (/internal) викликає лише Sales.Service і шлюз їх не проксіює.
+servers:
+  - url: http://localhost:5001
+paths:
+  /api/sessions/{sessionId}/seats:
+    get:
+      summary: Схема місць сеансу зі статусами
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Схема місць }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /internal/sessions/{sessionId}/reservations:
+    post:
+      summary: Резервування місць для замовлення (синхронно)
+      description: >
+        Ідемпотентність: за однакового orderId повторний запит не резервує місця вдруге
+        (після першого успіху місця належать тому самому замовленню, тож Catalog відповідає 409).
+        Тайм-аут на боці Sales.Service: 2 с. Термін утримання: 15 хв.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReserveRequest' }
+      responses:
+        '201':
+          description: Місця зарезервовано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/DomainConflict' }
+  /internal/sessions/{sessionId}/confirm:
+    post:
+      summary: Підтвердження продажу місць після оплати (синхронно)
+      description: >
+        Переводить місця замовлення зі стану Reserved у Sold. Повторний виклик після успіху
+        повертає 409 («резервування не знайдено»); Sales.Service перевіряє локальний стан перед викликом.
+        Тайм-аут на боці Sales.Service: 2 с.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmRequest' }
+      responses:
+        '200': { description: Місця продано }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/DomainConflict' }
+components:
+  schemas:
+    ReserveRequest:
+      type: object
+      required: [orderId, seats]
+      properties:
+        orderId: { type: string, format: uuid }
+        seats:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items: { $ref: '#/components/schemas/SeatRef' }
+    SeatRef:
+      type: object
+      required: [row, number]
+      properties:
+        row: { type: integer, minimum: 1 }
+        number: { type: integer, minimum: 1 }
+    ReservationResponse:
+      type: object
+      properties:
+        orderId: { type: string, format: uuid }
+        expiresAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              row: { type: integer }
+              number: { type: integer }
+              priceUah: { type: number, format: decimal }
+    ConfirmRequest:
+      type: object
+      required: [orderId]
+      properties:
+        orderId: { type: string, format: uuid }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+  responses:
+    NotFound:
+      description: Сеанс не знайдено
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    DomainConflict:
+      description: >
+        Порушено доменне правило: місце зайняте, термін минув, сеанс не відкрито тощо.
+        Тіло містить повідомлення в полі error.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

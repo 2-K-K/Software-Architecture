@@ -1,0 +1,32 @@
+openapi: 3.0.3
+info:
+  title: Notifications.Service
+  version: 1.0.0
+  description: >
+    Контекст «Сповіщення». Споживає події. Ідемпотентний: повторна доставка з тим самим eventId
+    повертає 200 із status=duplicate і не створює другого листа.
+servers:
+  - url: http://localhost:5003
+paths:
+  /events:
+    post:
+      summary: Доставка події TicketsIssued (асинхронна взаємодія)
+      description: >
+        Відправник (Sales.Service) не чекає результату обробки: подія ставиться в чергу
+        і доставляється з повторами. Схема тіла: events/tickets-issued.v1.json.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'events/tickets-issued.v1.json'
+      responses:
+        '200':
+          description: Прийнято (status=accepted) або дубль (status=duplicate)
+        '400':
+          description: Тіло не відповідає схемі
+  /api/notifications:
+    get:
+      summary: Список відправлених сповіщень (для демонстрації)
+      responses:
+        '200': { description: Список }

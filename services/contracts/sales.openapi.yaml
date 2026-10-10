@@ -1,0 +1,154 @@
+openapi: 3.0.3
+info:
+  title: Sales.Service
+  version: 1.0.0
+  description: >
+    Контекст «Продаж». Володіє замовленнями, оплатою і квитками.
+    Зовнішні клієнти звертаються через шлюз (/api/orders, /api/tickets).
+servers:
+  - url: http://localhost:5002
+paths:
+  /api/orders:
+    post:
+      summary: Створити замовлення (резервування місць)
+      description: >
+        Синхронно викликає Catalog.Service з тайм-аутом 2 с. Якщо Catalog не відповів,
+        замовлення не створюється, відповідь 503. Клієнт може повторити запит.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaceOrderRequest' }
+      responses:
+        '201':
+          description: Замовлення створено, місця утримуються 15 хв
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderCreated' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '503':
+          description: Catalog.Service недоступний (тайм-аут або відмова з'єднання)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /api/orders/{orderId}:
+    get:
+      summary: Стан замовлення
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Стан замовлення і квитки, якщо видано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderState' }
+        '404': { $ref: '#/components/responses/Error' }
+  /api/orders/{orderId}/payment:
+    post:
+      summary: Оплатити замовлення
+      description: >
+        Ідемпотентність: повторний запит для вже оплаченого замовлення повертає 409,
+        кошти вдруге не списуються (перевірка стану Order.EnsurePayable).
+        Якщо Catalog недоступний після списання, відповідь 202 (PaidPendingIssue);
+        фоновий обробник повторює підтвердження.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Оплачено, квитки видано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResult' }
+        '202':
+          description: Оплату прийнято, видача квитків очікує відновлення Catalog
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResult' }
+        '402': { description: Платіж відхилено банком, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /api/tickets/validation:
+    post:
+      summary: Перевірка квитка на вході
+      description: Квиток можна використати один раз. Відмова є штатним результатом, не помилкою (HTTP 200).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: Результат перевірки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accepted: { type: boolean }
+                  reason: { type: string }
+                  seat:
+                    type: object
+                    properties:
+                      row: { type: integer }
+                      number: { type: integer }
+components:
+  schemas:
+    PlaceOrderRequest:
+      type: object
+      required: [sessionId, buyerEmail, seats]
+      properties:
+        sessionId: { type: string, format: uuid }
+        buyerEmail: { type: string, format: email }
+        seats:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items:
+            type: object
+            required: [row, number]
+            properties:
+              row: { type: integer, minimum: 1 }
+              number: { type: integer, minimum: 1 }
+    OrderCreated:
+      type: object
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string, enum: [Created] }
+        expiresAt: { type: string, format: date-time }
+        total: { type: number }
+    OrderState:
+      type: object
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string, enum: [Created, Paid, Cancelled] }
+        total: { type: number }
+        ticketsIssued: { type: boolean }
+        pendingIssue: { type: boolean }
+        ticketCodes:
+          type: array
+          items: { type: string }
+    PaymentResult:
+      type: object
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { type: string, enum: [Paid, PaidPendingIssue] }
+        ticketCodes:
+          type: array
+          items: { type: string }
+        message: { type: string }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        service: { type: string }
+  responses:
+    Error:
+      description: Помилка; тіло містить поле error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

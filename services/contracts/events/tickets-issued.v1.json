@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ticketing.example/events/tickets-issued.v1.json",
+  "title": "TicketsIssued (v1)",
+  "description": "Подія, яку Sales.Service публікує після видачі квитків. Споживач: Notifications.Service. Гарантія доставки: принаймні один раз; споживач ідемпотентний за eventId.",
+  "type": "object",
+  "required": ["eventId", "type", "occurredAt", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "eventId": { "type": "string", "format": "uuid", "description": "Ключ дедуплікації" },
+    "type": { "const": "TicketsIssued" },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "required": ["orderId", "sessionId", "buyerEmail", "ticketCodes"],
+      "additionalProperties": false,
+      "properties": {
+        "orderId": { "type": "string", "format": "uuid" },
+        "sessionId": { "type": "string", "format": "uuid" },
+        "buyerEmail": { "type": "string", "format": "email" },
+        "ticketCodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
