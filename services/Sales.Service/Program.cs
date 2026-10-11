@@ -14,6 +14,7 @@ var notificationsUrl = builder.Configuration["Upstreams:Notifications"] ?? "http
 builder.Services.AddSingleton<SalesStore>();
 builder.Services.AddSingleton(Channel.CreateUnbounded<TicketsIssuedEvent>());
 builder.Services.AddSingleton<OrderFulfillment>();
+builder.Services.AddSingleton<IPaymentGateway, SimulatedPaymentGateway>();
 
 // Синхронний виклик із тайм-аутом 2 с: якщо Catalog мовчить, відповідаємо 503, а не чекаємо далі
 builder.Services.AddHttpClient<CatalogClient>(c => c.BaseAddress = new Uri(catalogUrl))
@@ -86,7 +87,7 @@ app.MapGet("/api/orders/{id:guid}", (Guid id, SalesStore store) =>
 });
 
 // Оплата: перевірка стану, списання (імітація шлюзу), підтвердження в Catalog, видача квитків
-app.MapPost("/api/orders/{id:guid}/payment", async (Guid id, SalesStore store, OrderFulfillment fulfillment, CancellationToken ct) =>
+app.MapPost("/api/orders/{id:guid}/payment", async (Guid id, SalesStore store, OrderFulfillment fulfillment, IPaymentGateway gateway, CancellationToken ct) =>
 {
     var order = store.Find(id);
     if (order is null)
@@ -101,14 +102,14 @@ app.MapPost("/api/orders/{id:guid}/payment", async (Guid id, SalesStore store, O
         return Results.Conflict(new { error = ex.Message });
     }
 
-    // Імітація платіжного шлюзу: картки з доменом @decline.test відхиляються
-    if (order.BuyerEmail.EndsWith("@decline.test", StringComparison.OrdinalIgnoreCase))
-        return Results.Json(new { error = "Платіж відхилено банком." }, statusCode: 402);
+    var charge = await gateway.ChargeAsync(order.Id, order.Total.Amount, order.BuyerEmail, ct);
+    if (!charge.Succeeded)
+        return Results.Json(new { error = charge.FailureReason }, statusCode: 402);
 
     try
     {
         lock (store.Gate)
-            order.MarkPaid("PAY-" + Guid.NewGuid().ToString("N")[..12], DateTimeOffset.UtcNow);
+            order.MarkPaid(charge.Reference!, DateTimeOffset.UtcNow);
     }
     catch (DomainException ex)
     {
