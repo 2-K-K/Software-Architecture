@@ -13,6 +13,7 @@ var notificationsUrl = builder.Configuration["Upstreams:Notifications"] ?? "http
 
 builder.Services.AddSingleton<SalesStore>();
 builder.Services.AddSingleton(Channel.CreateUnbounded<TicketsIssuedEvent>());
+builder.Services.AddSingleton<ITicketFactory, RandomTicketFactory>();
 builder.Services.AddSingleton<OrderFulfillment>();
 builder.Services.AddSingleton<IPaymentGateway, SimulatedPaymentGateway>();
 

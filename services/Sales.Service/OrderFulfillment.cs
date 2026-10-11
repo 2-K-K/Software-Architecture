@@ -1,6 +1,4 @@
-using System.Security.Cryptography;
 using System.Threading.Channels;
-using Ticketing.Domain.Entities;
 
 public enum FulfillKind { Issued, CatalogUnavailable, Rejected }
 
@@ -10,7 +8,11 @@ public sealed record FulfillResult(FulfillKind Kind, string? Error = null);
 /// Підтвердження продажу в Catalog і видача квитків. Використовується і з оплати,
 /// і з фонового повтору (PendingConfirmationWorker), тому повторний виклик безпечний.
 /// </summary>
-public sealed class OrderFulfillment(SalesStore store, CatalogClient catalog, Channel<TicketsIssuedEvent> events)
+public sealed class OrderFulfillment(
+    SalesStore store,
+    CatalogClient catalog,
+    ITicketFactory ticketFactory,
+    Channel<TicketsIssuedEvent> events)
 {
     public async Task<FulfillResult> ConfirmAndIssueAsync(Guid orderId, CancellationToken ct)
     {
@@ -40,9 +42,7 @@ public sealed class OrderFulfillment(SalesStore store, CatalogClient catalog, Ch
             return new FulfillResult(FulfillKind.Rejected, call.Error);
         }
 
-        var tickets = order.Items
-            .Select(i => Ticket.Issue(order.Id, order.SessionId, i.Code, NewTicketCode()))
-            .ToList();
+        var tickets = ticketFactory.IssueFor(order);
         store.AddTickets(orderId, tickets);
         store.SetPending(orderId, false);
 
@@ -55,6 +55,4 @@ public sealed class OrderFulfillment(SalesStore store, CatalogClient catalog, Ch
 
         return new FulfillResult(FulfillKind.Issued);
     }
-
-    private static string NewTicketCode() => Convert.ToHexString(RandomNumberGenerator.GetBytes(12));
 }
