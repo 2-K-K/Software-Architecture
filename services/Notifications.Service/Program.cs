@@ -41,3 +41,6 @@ app.Run();
 
 public sealed record TicketsIssuedEvent(Guid EventId, string Type, DateTimeOffset OccurredAt, TicketsIssuedPayload Payload);
 public sealed record TicketsIssuedPayload(Guid OrderId, Guid SessionId, string BuyerEmail, List<string> TicketCodes);
+
+// Потрібно для тестів (WebApplicationFactory). Не впливає на роботу сервісу.
+public partial class Program { }
