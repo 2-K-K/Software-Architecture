@@ -147,3 +147,6 @@ app.MapPost("/api/tickets/validation", (ValidateTicketRequest r, SalesStore stor
 });
 
 app.Run();
+
+// Потрібно для тестів (WebApplicationFactory). Не впливає на роботу сервісу.
+public partial class Program { }
