@@ -1,40 +1,31 @@
-using System.Net.Http.Json;
 using System.Threading.Channels;
 
 /// <summary>
-/// Асинхронна доставка подій споживачу Notifications.Service.
-/// Повторює відправку з паузою до 10 с, доки споживач не прийме подію.
-/// Відмова споживача не впливає на продаж: продаж уже завершено до постановки в чергу.
+/// Асинхронна доставка подій усім підписникам. Для кожного підписника повторює відправку з паузою до 10 с,
+/// доки він не прийме подію. Відмова підписника не впливає на продаж: продаж уже завершено до постановки в чергу.
 /// Примітка: черга в пам'яті, тому при перезапуску Sales неприйняті події губляться (див. звіт).
 /// </summary>
 public sealed class TicketEventDispatcher(
     Channel<TicketsIssuedEvent> channel,
-    IHttpClientFactory httpFactory,
+    IEnumerable<ITicketsIssuedSubscriber> subscribers,
     ILogger<TicketEventDispatcher> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        var client = httpFactory.CreateClient("notifications");
-
         await foreach (var evt in channel.Reader.ReadAllAsync(ct))
-        {
-            var delay = TimeSpan.FromSeconds(1);
-            while (true)
-            {
-                try
-                {
-                    var response = await client.PostAsJsonAsync("/events", evt, ct);
-                    if (response.IsSuccessStatusCode) break;
-                    log.LogWarning("Споживач відповів {Code}, повтор події {EventId}", (int)response.StatusCode, evt.EventId);
-                }
-                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-                {
-                    log.LogWarning("Споживач недоступний, повтор події {EventId} через {Delay}", evt.EventId, delay);
-                }
+            foreach (var subscriber in subscribers)
+                await DeliverAsync(subscriber, evt, ct);
+    }
 
-                await Task.Delay(delay, ct);
-                delay = TimeSpan.FromSeconds(Math.Min(10, delay.TotalSeconds * 2));
-            }
+    private async Task DeliverAsync(ITicketsIssuedSubscriber subscriber, TicketsIssuedEvent evt, CancellationToken ct)
+    {
+        var delay = TimeSpan.FromSeconds(1);
+        while (!await subscriber.HandleAsync(evt, ct))
+        {
+            log.LogWarning("Підписник {Subscriber} не прийняв подію {EventId}, повтор через {Delay}",
+                subscriber.GetType().Name, evt.EventId, delay);
+            await Task.Delay(delay, ct);
+            delay = TimeSpan.FromSeconds(Math.Min(10, delay.TotalSeconds * 2));
         }
     }
 }

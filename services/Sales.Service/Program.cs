@@ -24,6 +24,7 @@ builder.Services.AddHttpClient<CatalogClient>(c => c.BaseAddress = new Uri(catal
 builder.Services.AddHttpClient("notifications", c => c.BaseAddress = new Uri(notificationsUrl))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(3));
 
+builder.Services.AddSingleton<ITicketsIssuedSubscriber, NotificationsSubscriber>();
 builder.Services.AddHostedService<TicketEventDispatcher>();
 builder.Services.AddHostedService<PendingConfirmationWorker>();
 
