@@ -13,6 +13,7 @@ var notificationsUrl = builder.Configuration["Upstreams:Notifications"] ?? "http
 
 builder.Services.AddSingleton<SalesStore>();
 builder.Services.AddSingleton(Channel.CreateUnbounded<TicketsIssuedEvent>());
+builder.Services.AddSingleton<ICatalogSeats, CatalogSeatsAdapter>();
 builder.Services.AddSingleton<ITicketFactory, RandomTicketFactory>();
 builder.Services.AddSingleton<OrderFulfillment>();
 builder.Services.AddSingleton<IPaymentGateway, SimulatedPaymentGateway>();
@@ -33,8 +34,8 @@ var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { service = "sales", status = "ok" }));
 
-// Створення замовлення: синхронне резервування в Catalog з тайм-аутом
-app.MapPost("/api/orders", async (PlaceOrderRequest r, CatalogClient catalog, SalesStore store, CancellationToken ct) =>
+// Створення замовлення: резервування місць через порт ICatalogSeats (Adapter)
+app.MapPost("/api/orders", async (PlaceOrderRequest r, ICatalogSeats seats, SalesStore store, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(r.BuyerEmail) || !r.BuyerEmail.Contains('@'))
         return Results.BadRequest(new { error = "Вкажіть коректну адресу e-mail." });
@@ -42,32 +43,34 @@ app.MapPost("/api/orders", async (PlaceOrderRequest r, CatalogClient catalog, Sa
         return Results.BadRequest(new { error = "Замовлення має містити від 1 до 6 місць." });
 
     var orderId = Guid.NewGuid();
-    CatalogCall<ReservationResponse> call;
+    SeatReservation reservation;
     try
     {
-        call = await catalog.ReserveAsync(r.SessionId, orderId, r.Seats, ct);
+        var codes = r.Seats.Select(s => new SeatCode(s.Row, s.Number)).ToList();
+        reservation = await seats.ReserveAsync(r.SessionId, orderId, codes, ct);
+    }
+    catch (DomainException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+    catch (CatalogRejectedException ex)
+    {
+        return Results.Json(new { error = ex.Error }, statusCode: ex.StatusCode);
     }
     catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
     {
-        // Відмова синхронної залежності: замовлення не створюється, клієнт може повторити запит
         return Results.Json(new { error = "Каталог тимчасово недоступний. Спробуйте пізніше.", service = "catalog" },
             statusCode: 503);
     }
 
-    if (!call.Ok)
-        return Results.Json(new { error = call.Error }, statusCode: call.StatusCode);
-
-    var items = call.Value!.Items
-        .Select(i => new ReservedSeat(new SeatCode(i.Row, i.Number), Money.Uah(i.PriceUah)))
-        .ToList();
-    var order = Order.Place(orderId, r.SessionId, r.BuyerEmail, items, call.Value.ExpiresAt);
+    var order = Order.Place(orderId, r.SessionId, r.BuyerEmail, reservation.Seats, reservation.ExpiresAt);
     store.Add(order);
 
     return Results.Created($"/api/orders/{orderId}", new
     {
         orderId,
         status = order.Status.ToString(),
-        expiresAt = call.Value.ExpiresAt,
+        expiresAt = reservation.ExpiresAt,
         total = order.Total.Amount
     });
 });

@@ -10,7 +10,7 @@ public sealed record FulfillResult(FulfillKind Kind, string? Error = null);
 /// </summary>
 public sealed class OrderFulfillment(
     SalesStore store,
-    CatalogClient catalog,
+    ICatalogSeats seats,
     ITicketFactory ticketFactory,
     Channel<TicketsIssuedEvent> events)
 {
@@ -23,23 +23,21 @@ public sealed class OrderFulfillment(
         if (order is null)
             return new FulfillResult(FulfillKind.Rejected, "Замовлення не знайдено.");
 
-        CatalogCall<ConfirmResponse> call;
         try
         {
-            call = await catalog.ConfirmAsync(order.SessionId, orderId, ct);
+            await seats.ConfirmAsync(order.SessionId, orderId, ct);
+        }
+        catch (CatalogRejectedException ex)
+        {
+            // Наприклад, термін резервування минув. Потребує ручного розгляду.
+            store.SetPending(orderId, false);
+            return new FulfillResult(FulfillKind.Rejected, ex.Error);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
             // Каталог недоступний: оплату прийнято, місця ще не підтверджено. Повторимо пізніше.
             store.SetPending(orderId, true);
             return new FulfillResult(FulfillKind.CatalogUnavailable);
-        }
-
-        if (!call.Ok)
-        {
-            // Наприклад, термін резервування минув. Потребує ручного розгляду.
-            store.SetPending(orderId, false);
-            return new FulfillResult(FulfillKind.Rejected, call.Error);
         }
 
         var tickets = ticketFactory.IssueFor(order);
