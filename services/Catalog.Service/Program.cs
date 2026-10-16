@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Caching.Memory;
 using Ticketing.Domain.Entities;
 using Ticketing.Domain.Exceptions;
 using Ticketing.Domain.ValueObjects;
@@ -6,11 +7,18 @@ using Ticketing.Domain.ValueObjects;
 // Володіє даними Event, Session, Seat. Інші сервіси до них не звертаються напряму.
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddMemoryCache();
 var app = builder.Build();
 
 var events = new Dictionary<Guid, Event>();
 var sessions = new Dictionary<Guid, Session>();
 var gate = new object();
+
+// Кеш читання схеми залу (ЛР5). Ключ: sessionId. Життя запису: 5 хв.
+// Інвалідизація: резервування, звільнення та підтвердження продажу цього сеансу.
+// Вимикається прапорцем Catalog:SeatsCache:Enabled=false (для замірів «без кешу»).
+var seatsCacheEnabled = builder.Configuration.GetValue("Catalog:SeatsCache:Enabled", true);
+var seatsCacheTtl = TimeSpan.FromMinutes(5);
 
 app.MapGet("/health", () => Results.Ok(new { service = "catalog", status = "ok" }));
 
@@ -39,56 +47,67 @@ app.MapPost("/api/sessions", (CreateSessionRequest r) => Domain(() =>
     }
 }));
 
-app.MapGet("/api/sessions/{id:guid}/seats", (Guid id) => Domain(() =>
+app.MapGet("/api/sessions/{id:guid}/seats", (Guid id, IMemoryCache cache) => Domain(() =>
 {
+    var now = Now();
+    if (seatsCacheEnabled && cache.TryGetValue(SeatsKey(id), out SeatMapSnapshot? cached) && cached is not null)
+        return Results.Ok(SeatMapResponse(cached, now));
+
     lock (gate)
     {
         if (!sessions.TryGetValue(id, out var s))
             return Results.NotFound(new { error = "Сеанс не знайдено." });
-        var now = Now();
-        var seats = s.Seats
-            .OrderBy(x => x.Code.Row).ThenBy(x => x.Code.Number)
-            .Select(x => new
-            {
-                row = x.Code.Row,
-                number = x.Code.Number,
-                priceUah = x.Price.Amount,
-                // Місце з простроченим резервуванням показуємо як вільне
-                status = x.IsAvailableAt(now) ? "Available" : x.Status.ToString()
-            });
-        return Results.Ok(new { sessionId = s.Id, status = s.Status.ToString(), seats });
+        var snapshot = Snapshot(s);
+        // Запис у кеш під тим самим замком, що й інвалідизація: старий стан не може осісти в кеші
+        if (seatsCacheEnabled) cache.Set(SeatsKey(id), snapshot, seatsCacheTtl);
+        return Results.Ok(SeatMapResponse(snapshot, now));
     }
 }));
 
 // Внутрішній синхронний ендпоінт: викликає Sales.Service при створенні замовлення.
 // Не проксіюється шлюзом.
-app.MapPost("/internal/sessions/{id:guid}/reservations", (Guid id, ReserveRequest r) => Domain(() =>
+app.MapPost("/internal/sessions/{id:guid}/reservations", (Guid id, ReserveRequest r, IMemoryCache cache) => Domain(() =>
 {
     lock (gate)
     {
-        if (!sessions.TryGetValue(id, out var s))
-            return Results.NotFound(new { error = "Сеанс не знайдено." });
-        var codes = r.Seats.Select(x => new SeatCode(x.Row, x.Number)).ToList();
-        var now = Now();
-        var reserved = s.ReserveSeats(r.OrderId, codes, now);
-        return Results.Created($"/internal/sessions/{id}/reservations/{r.OrderId}", new
+        try
         {
-            orderId = r.OrderId,
-            expiresAt = now + Session.ReservationDuration,
-            items = reserved.Select(x => new { row = x.Code.Row, number = x.Code.Number, priceUah = x.Price.Amount })
-        });
+            if (!sessions.TryGetValue(id, out var s))
+                return Results.NotFound(new { error = "Сеанс не знайдено." });
+            var codes = r.Seats.Select(x => new SeatCode(x.Row, x.Number)).ToList();
+            var now = Now();
+            var reserved = s.ReserveSeats(r.OrderId, codes, now);
+            return Results.Created($"/internal/sessions/{id}/reservations/{r.OrderId}", new
+            {
+                orderId = r.OrderId,
+                expiresAt = now + Session.ReservationDuration,
+                items = reserved.Select(x => new { row = x.Code.Row, number = x.Code.Number, priceUah = x.Price.Amount })
+            });
+        }
+        finally
+        {
+            // Інвалідизація за подією зміни: навіть при відмові сеанс міг змінитися частково
+            cache.Remove(SeatsKey(id));
+        }
     }
 }));
 
 // Внутрішній синхронний ендпоінт: підтверджує продаж місць після оплати.
-app.MapPost("/internal/sessions/{id:guid}/confirm", (Guid id, ConfirmRequest r) => Domain(() =>
+app.MapPost("/internal/sessions/{id:guid}/confirm", (Guid id, ConfirmRequest r, IMemoryCache cache) => Domain(() =>
 {
     lock (gate)
     {
-        if (!sessions.TryGetValue(id, out var s))
-            return Results.NotFound(new { error = "Сеанс не знайдено." });
-        s.ConfirmSale(r.OrderId, Now());
-        return Results.Ok(new { orderId = r.OrderId, status = "Sold" });
+        try
+        {
+            if (!sessions.TryGetValue(id, out var s))
+                return Results.NotFound(new { error = "Сеанс не знайдено." });
+            s.ConfirmSale(r.OrderId, Now());
+            return Results.Ok(new { orderId = r.OrderId, status = "Sold" });
+        }
+        finally
+        {
+            cache.Remove(SeatsKey(id));
+        }
     }
 }));
 
@@ -102,6 +121,37 @@ static IResult Domain(Func<IResult> action)
 }
 
 static DateTimeOffset Now() => DateTimeOffset.UtcNow;
+
+static string SeatsKey(Guid sessionId) => $"seats:{sessionId}";
+
+// Знімок стану сеансу, який зберігається в кеші. Статус «Available» для місця з простроченим
+// резервуванням обчислюється при читанні, тож кешований знімок не застаріває з часом.
+static SeatMapSnapshot Snapshot(Session s) => new(
+    s.Id,
+    s.Status.ToString(),
+    s.Seats
+        .OrderBy(x => x.Code.Row).ThenBy(x => x.Code.Number)
+        .Select(x => new SeatView(x.Code.Row, x.Code.Number, x.Price.Amount, x.Status.ToString(), x.ReservedUntil))
+        .ToList());
+
+static object SeatMapResponse(SeatMapSnapshot snap, DateTimeOffset now) => new
+{
+    sessionId = snap.SessionId,
+    status = snap.SessionStatus,
+    seats = snap.Seats.Select(v => new
+    {
+        row = v.Row,
+        number = v.Number,
+        priceUah = v.PriceUah,
+        status = IsAvailable(v, now) ? "Available" : v.Status
+    })
+};
+
+static bool IsAvailable(SeatView v, DateTimeOffset now) =>
+    v.Status == "Available" || (v.Status == "Reserved" && v.ReservedUntil <= now);
+
+public sealed record SeatView(int Row, int Number, decimal PriceUah, string Status, DateTimeOffset? ReservedUntil);
+public sealed record SeatMapSnapshot(Guid SessionId, string SessionStatus, IReadOnlyList<SeatView> Seats);
 
 public sealed record CreateEventRequest(string Title, string OrganizerName);
 public sealed record CreateSessionRequest(Guid EventId, string VenueName, DateTimeOffset StartsAt, List<SeatPrice> Seats);

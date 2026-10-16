@@ -19,7 +19,9 @@ public class NotificationsCharacterizationTests
     [SetUp]
     public void SetUp()
     {
-        _factory = new WebApplicationFactory<Program>();
+        // Окрема in-memory база на кожен тест, щоб тести не впливали одне на одного
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+            b.UseSetting("Notifications:Db", $"Data Source=test-{Guid.NewGuid():N};Mode=Memory;Cache=Shared"));
         _client = _factory.CreateClient();
     }
 

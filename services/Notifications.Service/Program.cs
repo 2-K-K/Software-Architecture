@@ -2,39 +2,30 @@
 // Власних даних, які потрібні іншим сервісам, не має. Продавець події не залежить від цього сервісу.
 
 var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
 
-var gate = new object();
-var seen = new HashSet<Guid>();   // ідемпотентність: eventId уже оброблених подій
-var inbox = new List<object>();   // «надіслані» листи (імітація провайдера e-mail)
+// Файл за замовчуванням; тести підставляють окрему in-memory базу
+var connectionString = builder.Configuration["Notifications:Db"] ?? "Data Source=notifications.db";
+var db = new NotificationsDb(connectionString);
+// Цільова версія схеми: 2 – етап розширення, 3 – етап скорочення (за замовчуванням)
+var schemaTarget = builder.Configuration.GetValue("Notifications:SchemaTarget", Migrations.Latest);
+db.Migrate(schemaTarget);
+builder.Services.AddSingleton(db);
+
+var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { service = "notifications", status = "ok" }));
 
-// Ендпоінт, на який Sales.Service доставляє подію. Повторна доставка не створює дубля.
-app.MapPost("/events", (TicketsIssuedEvent evt) =>
-{
-    lock (gate)
-    {
-        if (!seen.Add(evt.EventId))
-            return Results.Ok(new { status = "duplicate" });
+// Ендпоінт, на який Sales.Service доставляє подію. Повторна доставка не створює дубля
+// (ідемпотентність за eventId, див. NotificationsDb.TryRecord).
+app.MapPost("/events", (TicketsIssuedEvent evt, NotificationsDb store) =>
+    store.TryRecord(evt)
+        ? Results.Ok(new { status = "accepted" })
+        : Results.Ok(new { status = "duplicate" }));
 
-        inbox.Add(new
-        {
-            eventId = evt.EventId,
-            orderId = evt.Payload.OrderId,
-            to = evt.Payload.BuyerEmail,
-            subject = "Ваші електронні квитки",
-            ticketCount = evt.Payload.TicketCodes.Count,
-            sentAt = DateTimeOffset.UtcNow
-        });
-    }
-    return Results.Ok(new { status = "accepted" });
-});
-
-app.MapGet("/api/notifications", () =>
+app.MapGet("/api/notifications", (NotificationsDb store) =>
 {
-    lock (gate)
-        return Results.Ok(new { count = inbox.Count, items = inbox.ToList() });
+    var (count, items) = store.List();
+    return Results.Ok(new { count, items });
 });
 
 app.Run();
