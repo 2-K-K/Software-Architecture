@@ -1,3 +1,4 @@
+using Npgsql;
 using Ticketing.Domain.Exceptions;
 using Ticketing.Domain.ValueObjects;
 
