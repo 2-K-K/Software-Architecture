@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Ticketing.Domain\Ticketing.Domain.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Ticketing.Domain\Ticketing.Domain.csproj" />
+	</ItemGroup>
 
+	<ItemGroup>
+		<Compile Include="..\Shared\**\*.cs" />
+	</ItemGroup>
 </Project>

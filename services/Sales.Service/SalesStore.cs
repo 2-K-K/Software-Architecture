@@ -11,6 +11,19 @@ public sealed class SalesStore
     private readonly HashSet<Guid> _issued = new();
     private readonly HashSet<Guid> _pending = new();
 
+    private readonly Dictionary<Guid, string> _owners = new();
+
+    /// <summary>Власник замовлення (sub токена покупця). Лише він може бачити й оплачувати замовлення.</summary>
+    public void SetOwner(Guid orderId, string userId)
+    {
+        lock (Gate) _owners[orderId] = userId;
+    }
+
+    public string? OwnerOf(Guid orderId)
+    {
+        lock (Gate) return _owners.GetValueOrDefault(orderId);
+    }
+
     public object Gate { get; } = new();
 
     public void Add(Order order)

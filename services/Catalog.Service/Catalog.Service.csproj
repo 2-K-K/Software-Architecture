@@ -1,8 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+	<ItemGroup>
+		<ProjectReference Include="..\..\src\Ticketing.Domain\Ticketing.Domain.csproj" />
+	</ItemGroup>
 
-  <!-- Доменна логіка перенесена з ЛР2 без змін правил. Сервіс володіє своїми даними. -->
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Ticketing.Domain\Ticketing.Domain.csproj" />
-  </ItemGroup>
-
+	<ItemGroup>
+		<Compile Include="..\Shared\**\*.cs" />
+	</ItemGroup>
 </Project>

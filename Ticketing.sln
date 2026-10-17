@@ -36,6 +36,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "services", "services", "{02
 		..\..\..\Downloads\lab5-files\lab5-files\services\measure-cache.sh = ..\..\..\Downloads\lab5-files\lab5-files\services\measure-cache.sh
 		services\README.md = services\README.md
 		services\run-all.sh = services\run-all.sh
+		security-check.py = security-check.py
 		services\stop-all.sh = services\stop-all.sh
 	EndProjectSection
 EndProject
@@ -54,6 +55,18 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Notifications.Service.Tests", "services\Notifications.Service.Tests\Notifications.Service.Tests.csproj", "{A42B4BC7-05C7-15AC-BD6B-790E54F3D892}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sales.Service.Tests", "services\Sales.Service.Tests\Sales.Service.Tests.csproj", "{E75C6CC6-1587-398C-CB96-2620410B5454}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Shared", "Shared", "{55653CCE-C80A-4B9A-B6D1-C2D5661253FE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Security", "Security", "{7D60F23F-3544-4C80-A2B2-49F5B03E0D27}"
+	ProjectSection(SolutionItems) = preProject
+		TokenService.cs = TokenService.cs
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "loadtest", "loadtest", "{6065EB41-2261-4A2B-B3D5-7C413CC4DFC0}"
+	ProjectSection(SolutionItems) = preProject
+		load.py = load.py
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -133,6 +146,9 @@ Global
 		{699EF2FD-5CC4-44A3-84FC-AA35E62D375D} = {7FAE7197-1643-4B67-B006-E313605AFFBE}
 		{A42B4BC7-05C7-15AC-BD6B-790E54F3D892} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 		{E75C6CC6-1587-398C-CB96-2620410B5454} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{55653CCE-C80A-4B9A-B6D1-C2D5661253FE} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
+		{7D60F23F-3544-4C80-A2B2-49F5B03E0D27} = {55653CCE-C80A-4B9A-B6D1-C2D5661253FE}
+		{6065EB41-2261-4A2B-B3D5-7C413CC4DFC0} = {02EA681E-C7D8-13C7-8484-4AC65E1B71E8}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {7AC729FD-7B77-48D5-A277-180960D5BFF7}

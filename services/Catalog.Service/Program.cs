@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Ticketing.Domain.Entities;
 using Ticketing.Domain.Exceptions;
@@ -5,38 +8,50 @@ using Ticketing.Domain.ValueObjects;
 
 // Catalog.Service: контекст «Каталог» (заходи, сеанси, схеми залів, місця).
 // Володіє даними Event, Session, Seat. Інші сервіси до них не звертаються напряму.
+// ЛР6: створювати заходи може організатор; сеанси — лише власник заходу; внутрішні ендпоінти — лише службовий токен.
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddMemoryCache();
+var authKey = TokenService.RequireKey(builder.Configuration);
 var app = builder.Build();
 
 var events = new Dictionary<Guid, Event>();
+var eventOwners = new Dictionary<Guid, string>();   // власник заходу (sub токена організатора)
 var sessions = new Dictionary<Guid, Session>();
 var gate = new object();
 
 // Кеш читання схеми залу (ЛР5). Ключ: sessionId. Життя запису: 5 хв.
 // Інвалідизація: резервування, звільнення та підтвердження продажу цього сеансу.
-// Вимикається прапорцем Catalog:SeatsCache:Enabled=false (для замірів «без кешу»).
+// Вимикається прапорцем Catalog:SeatsCache:Enabled=false (для замірів «без кешу», ЛР6).
 var seatsCacheEnabled = builder.Configuration.GetValue("Catalog:SeatsCache:Enabled", true);
 var seatsCacheTtl = TimeSpan.FromMinutes(5);
 
 app.MapGet("/health", () => Results.Ok(new { service = "catalog", status = "ok" }));
 
-// Публічні ендпоінти каталогу (через шлюз)
-app.MapPost("/api/events", (CreateEventRequest r) => Domain(() =>
+// Публічні ендпоінти каталогу (через шлюз). Створення — лише для організатора
+app.MapPost("/api/events", (CreateEventRequest r, HttpRequest http) => Domain(() =>
 {
+    if (TokenService.RequireRole(http, authKey, "organizer", out var who) is { } denied) return denied;
     var ev = Event.Create(r.Title, r.OrganizerName);
     ev.Publish();
-    lock (gate) events[ev.Id] = ev;
+    lock (gate)
+    {
+        events[ev.Id] = ev;
+        eventOwners[ev.Id] = who.UserId;
+    }
     return Results.Created($"/api/events/{ev.Id}", new { eventId = ev.Id, status = ev.Status.ToString() });
 }));
 
-app.MapPost("/api/sessions", (CreateSessionRequest r) => Domain(() =>
+app.MapPost("/api/sessions", (CreateSessionRequest r, HttpRequest http) => Domain(() =>
 {
+    if (TokenService.RequireRole(http, authKey, "organizer", out var who) is { } denied) return denied;
     lock (gate)
     {
         if (!events.TryGetValue(r.EventId, out var ev))
             return Results.NotFound(new { error = "Захід не знайдено." });
+        // Авторизація на рівні власника ресурсу: чужий захід змінювати не можна
+        if (eventOwners[r.EventId] != who.UserId)
+            return Results.Json(new { error = "Це не ваш захід." }, statusCode: StatusCodes.Status403Forbidden);
         ev.EnsureOnSale();
         var layout = r.Seats.Select(s => (new SeatCode(s.Row, s.Number), Money.Uah(s.PriceUah)));
         var session = Session.Schedule(ev.Id, r.VenueName, r.StartsAt, layout, Now());
@@ -47,27 +62,44 @@ app.MapPost("/api/sessions", (CreateSessionRequest r) => Domain(() =>
     }
 }));
 
-app.MapGet("/api/sessions/{id:guid}/seats", (Guid id, IMemoryCache cache) => Domain(() =>
+// Схема залу: публічна. Заголовок Server-Timing показує, де витрачається час (ЛР6, пошук вузького місця)
+app.MapGet("/api/sessions/{id:guid}/seats", (Guid id, IMemoryCache cache, HttpResponse resp) => Domain(() =>
 {
     var now = Now();
-    if (seatsCacheEnabled && cache.TryGetValue(SeatsKey(id), out SeatMapSnapshot? cached) && cached is not null)
-        return Results.Ok(SeatMapResponse(cached, now));
+    SeatMapSnapshot? snap = null;
+    if (seatsCacheEnabled && cache.TryGetValue(SeatsKey(id), out SeatMapSnapshot? cached))
+        snap = cached;
 
-    lock (gate)
+    double lockMs = 0, buildMs = 0;
+    if (snap is null)
     {
-        if (!sessions.TryGetValue(id, out var s))
-            return Results.NotFound(new { error = "Сеанс не знайдено." });
-        var snapshot = Snapshot(s);
-        // Запис у кеш під тим самим замком, що й інвалідизація: старий стан не може осісти в кеші
-        if (seatsCacheEnabled) cache.Set(SeatsKey(id), snapshot, seatsCacheTtl);
-        return Results.Ok(SeatMapResponse(snapshot, now));
+        var tLock = Stopwatch.GetTimestamp();
+        lock (gate)
+        {
+            lockMs = ElapsedMs(tLock);
+            if (!sessions.TryGetValue(id, out var s))
+                return Results.NotFound(new { error = "Сеанс не знайдено." });
+            var tBuild = Stopwatch.GetTimestamp();
+            snap = Snapshot(s);
+            buildMs = ElapsedMs(tBuild);
+            // Запис у кеш під тим самим замком, що й інвалідизація
+            if (seatsCacheEnabled) cache.Set(SeatsKey(id), snap, seatsCacheTtl);
+        }
     }
+
+    var tJson = Stopwatch.GetTimestamp();
+    var json = JsonSerializer.Serialize(SeatMapResponse(snap!, now));
+    var jsonMs = ElapsedMs(tJson);
+    resp.Headers["Server-Timing"] =
+        $"lock;dur={Ms(lockMs)}, build;dur={Ms(buildMs)}, json;dur={Ms(jsonMs)}";
+    return Results.Content(json, "application/json");
 }));
 
 // Внутрішній синхронний ендпоінт: викликає Sales.Service при створенні замовлення.
-// Не проксіюється шлюзом.
-app.MapPost("/internal/sessions/{id:guid}/reservations", (Guid id, ReserveRequest r, IMemoryCache cache) => Domain(() =>
+// Не проксіюється шлюзом. ЛР6: приймає лише службовий токен (роль service).
+app.MapPost("/internal/sessions/{id:guid}/reservations", (Guid id, ReserveRequest r, HttpRequest http, IMemoryCache cache) => Domain(() =>
 {
+    if (TokenService.RequireRole(http, authKey, "service", out _) is { } denied) return denied;
     lock (gate)
     {
         try
@@ -92,9 +124,10 @@ app.MapPost("/internal/sessions/{id:guid}/reservations", (Guid id, ReserveReques
     }
 }));
 
-// Внутрішній синхронний ендпоінт: підтверджує продаж місць після оплати.
-app.MapPost("/internal/sessions/{id:guid}/confirm", (Guid id, ConfirmRequest r, IMemoryCache cache) => Domain(() =>
+// Внутрішній синхронний ендпоінт: підтверджує продаж місць після оплати. Лише службовий токен.
+app.MapPost("/internal/sessions/{id:guid}/confirm", (Guid id, ConfirmRequest r, HttpRequest http, IMemoryCache cache) => Domain(() =>
 {
+    if (TokenService.RequireRole(http, authKey, "service", out _) is { } denied) return denied;
     lock (gate)
     {
         try
@@ -124,8 +157,13 @@ static DateTimeOffset Now() => DateTimeOffset.UtcNow;
 
 static string SeatsKey(Guid sessionId) => $"seats:{sessionId}";
 
-// Знімок стану сеансу, який зберігається в кеші. Статус «Available» для місця з простроченим
-// резервуванням обчислюється при читанні, тож кешований знімок не застаріває з часом.
+static double ElapsedMs(long startTimestamp) =>
+    (Stopwatch.GetTimestamp() - startTimestamp) * 1000.0 / Stopwatch.Frequency;
+
+static string Ms(double ms) => ms.ToString("F3", CultureInfo.InvariantCulture);
+
+// Знімок стану сеансу для кешу. Статус «Available» для місця з простроченим резервуванням
+// обчислюється при читанні, тож кешований знімок не застаріває з часом.
 static SeatMapSnapshot Snapshot(Session s) => new(
     s.Id,
     s.Status.ToString(),
@@ -159,3 +197,6 @@ public sealed record SeatPrice(int Row, int Number, decimal PriceUah);
 public sealed record SeatRef(int Row, int Number);
 public sealed record ReserveRequest(Guid OrderId, List<SeatRef> Seats);
 public sealed record ConfirmRequest(Guid OrderId);
+
+// Потрібно для тестів (WebApplicationFactory). Не впливає на роботу сервісу.
+public partial class Program { }
