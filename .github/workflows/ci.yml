@@ -1,0 +1,56 @@
+# ЛР7: конвеєр складання. Кожен крок зупиняє збірку при помилці (job не переходить далі).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # 1. Статичні fitness-функції: найшвидша перевірка, без збірки коду
+  fitness-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: F1, F2 — архітектурні правила в коді
+        run: python3 fitness/fitness.py --static
+
+  # 2. Модульні, інтеграційні, архітектурні та контрактні тести
+  test:
+    needs: fitness-static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Модульні тести домену (без БД)
+        run: dotnet test tests/Ticketing.Domain.Tests --logger "trx;LogFileName=domain.trx"
+      - name: Тести сценаріїв застосунку
+        run: dotnet test tests/Ticketing.Application.Tests
+      - name: Архітектурні тести (напрямок залежностей)
+        run: dotnet test tests/Ticketing.Architecture.Tests
+      - name: Інтеграційні тести сховища та міграцій (Notifications, SQLite)
+        run: dotnet test services/Notifications.Service.Tests
+      - name: Контрактний тест споживача (Sales, без Catalog)
+        run: dotnet test services/Sales.Service.Tests --filter "FullyQualifiedName~CatalogContractConsumerTests"
+      - name: Контрактний тест постачальника (Catalog)
+        run: dotnet test services/Catalog.Service.Tests
+
+  # 3. Динамічна fitness-функція: запускаємо Catalog і міряємо p95 за порогом QS-1
+  fitness-dynamic:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      Auth__Key: ${{ secrets.AUTH_KEY || 'ci-only-signing-key-0123456789abcdef-x' }}
+      AUTH_KEY: ${{ secrets.AUTH_KEY || 'ci-only-signing-key-0123456789abcdef-x' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Запуск Catalog.Service
+        run: |
+          dotnet run --project services/Catalog.Service --urls http://localhost:5001 &
+          for i in $(seq 60); do curl -s http://localhost:5001/health && break; sleep 1; done
+      - name: F3 — p95 схеми залу ≤ 500 мс
+        run: python3 fitness/fitness.py --dynamic

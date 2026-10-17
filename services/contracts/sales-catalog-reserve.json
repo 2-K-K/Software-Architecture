@@ -1,0 +1,42 @@
+{
+  "contract": "sales-catalog-reserve",
+  "version": "1.0.0",
+  "consumer": "Sales.Service",
+  "provider": "Catalog.Service",
+  "interaction": "Резервування місць на сеансі під час створення замовлення",
+  "request": {
+    "method": "POST",
+    "path": "/internal/sessions/{sessionId}/reservations",
+    "headers": { "Authorization": "Bearer <службовий токен, role=service>" },
+    "body": {
+      "orderId": "uuid",
+      "seats": [ { "row": "int", "number": "int" } ]
+    }
+  },
+  "responses": {
+    "201": {
+      "required": {
+        "orderId": "uuid",
+        "expiresAt": "date-time",
+        "items": [ { "row": "int", "number": "int", "priceUah": "number" } ]
+      }
+    },
+    "404": { "required": { "error": "string" } },
+    "409": { "required": { "error": "string" } },
+    "401": { "required": {} }
+  },
+  "example": {
+    "request": {
+      "orderId": "6f1c2a4e-0000-4000-8000-000000000001",
+      "seats": [ { "row": 1, "number": 1 }, { "row": 1, "number": 2 } ]
+    },
+    "response201": {
+      "orderId": "6f1c2a4e-0000-4000-8000-000000000001",
+      "expiresAt": "2030-12-01T18:15:00Z",
+      "items": [
+        { "row": 1, "number": 1, "priceUah": 250 },
+        { "row": 1, "number": 2, "priceUah": 250 }
+      ]
+    }
+  }
+}
